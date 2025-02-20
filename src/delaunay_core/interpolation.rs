@@ -683,9 +683,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::io;
-
-    use anyhow::Context;
     use approx::assert_ulps_eq;
 
     use crate::test_utilities::{random_points_in_range, random_points_with_seed, SEED, SEED2};
