@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use criterion::{measurement::WallTime, BenchmarkGroup, Criterion};
-use rand::distributions::uniform::SampleUniform;
+use rand::distr::uniform::SampleUniform;
 use spade::{
     DelaunayTriangulation, HierarchyHintGeneratorWithBranchFactor, HintGenerator, Point2, SpadeNum,
     Triangulation,

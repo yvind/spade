@@ -1,7 +1,7 @@
 use core::fmt::{self, Display, Formatter};
 
 use criterion::{measurement::WallTime, BenchmarkGroup, BenchmarkId, Throughput};
-use rand::{distributions::uniform::SampleUniform, Rng, SeedableRng};
+use rand::{distr::uniform::SampleUniform, Rng, SeedableRng};
 use spade::{
     DelaunayTriangulation, HierarchyHintGenerator, LastUsedVertexHintGenerator, Point2, SpadeNum,
     Triangulation,
@@ -27,7 +27,7 @@ pub fn uniform_distribution<S: SpadeNum + SampleUniform>(
 where
     S::Sampler: Copy,
 {
-    let range = rand::distributions::Uniform::new_inclusive(-range, range);
+    let range = rand::distr::Uniform::new_inclusive(-range, range).unwrap();
     let mut rng = rand::rngs::StdRng::from_seed(seed);
     core::iter::from_fn(move || Some(Point2::new(rng.sample(range), rng.sample(range))))
 }
@@ -43,7 +43,7 @@ pub fn random_walk_distribution<S: SpadeNum + SampleUniform>(
 where
     S::Sampler: Copy,
 {
-    let range = rand::distributions::Uniform::new_inclusive(-step_size, step_size);
+    let range = rand::distr::Uniform::new_inclusive(-step_size, step_size).unwrap();
     let mut last_x = S::zero();
     let mut last_y = S::one();
 
