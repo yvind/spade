@@ -2003,7 +2003,7 @@ mod test {
 
         assert_eq!(cdt.num_vertices(), initial_num_vertices + 1);
         assert_eq!(edges.len(), 2);
-        check_returned_edges(&mut cdt, &edges, from, to);
+        check_returned_edges(&cdt, &edges, from, to);
 
         Ok(())
     }
@@ -2021,7 +2021,7 @@ mod test {
         // 3 new points should be added as the constraint intersects all 3 existing edges
         assert_eq!(cdt.num_vertices(), initial_num_vertices + 3);
         assert_eq!(edges.len(), 4);
-        check_returned_edges(&mut cdt, &edges, from, to);
+        check_returned_edges(&cdt, &edges, from, to);
 
         Ok(())
     }

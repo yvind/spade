@@ -37,15 +37,14 @@ fn main() -> anyhow::Result<()> {
     vertices.shrink_to_fit();
     edges.shrink_to_fit();
 
-    load_with_spade(&vertices, &edges)?;
-    println!();
-
     load_with_cdt_crate(&vertices, &edges)?;
+    println!();
+    load_with_spade(vertices, edges)?;
 
     Ok(())
 }
 
-fn load_with_spade(vertices: &Vec<Point2<f64>>, edges: &Vec<[usize; 2]>) -> anyhow::Result<()> {
+fn load_with_spade(vertices: Vec<Point2<f64>>, edges: Vec<[usize; 2]>) -> anyhow::Result<()> {
     let vertices_clone = vertices.clone();
     let edges_clone = edges.clone();
 
@@ -172,8 +171,10 @@ fn draw_to_pixmap(cdt: ConstrainedDelaunayTriangulation<Point2<f64>>) -> anyhow:
         .post_scale(scale_x as f32, -scale_y as f32)
         .post_translate(0.0, res_y as f32);
 
-    let mut stroke = Stroke::default();
-    stroke.width = 0.1 / scale_x as f32;
+    let mut stroke = Stroke {
+        width: 0.1 / scale_x as f32,
+        ..Default::default()
+    };
 
     let mut paint = Paint::default();
 
