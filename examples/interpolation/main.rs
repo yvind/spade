@@ -44,7 +44,6 @@ const VERTICES: &[PointWithHeight] = &[
     PointWithHeight::new(-10.0, 10.0, 0.0),
     PointWithHeight::new(-10.0, -10.0, 0.1),
     PointWithHeight::new(-15.0, 20.0, 0.5),
-    PointWithHeight::new(-20.0, 20.0, 0.0),
     PointWithHeight::new(-5.0, 0.0, 0.25),
     PointWithHeight::new(5.0, 7.0, 0.75),
     PointWithHeight::new(12.0, -10.0, 0.4),
@@ -71,7 +70,9 @@ pub fn main() -> Result<()> {
     let dimensions = 512;
     let mut nn_c0_pixmap =
         Pixmap::new(dimensions, dimensions).context("Failed to allocate image")?;
-    let mut nn_c1_pixmap =
+    let mut nn_c1_pixmap_1 =
+        Pixmap::new(dimensions, dimensions).context("Failed to allocate image")?;
+    let mut nn_c1_pixmap_05 =
         Pixmap::new(dimensions, dimensions).context("Failed to allocate image")?;
     let mut barycentric_pixmap =
         Pixmap::new(dimensions, dimensions).context("Failed to allocate image")?;
@@ -92,15 +93,19 @@ pub fn main() -> Result<()> {
     let nn = t.natural_neighbor();
     let barycentric = t.barycentric();
 
+    let grads = nn.estimate_gradients(|v| v.data().height);
+
     for y in 0..dimensions {
         for x in 0..dimensions {
             let coords = px_to_coords(x, y);
             let value_nn_c0 = nn.interpolate(|v| v.data().height, coords);
             set_pixel(&mut nn_c0_pixmap, x, y, value_nn_c0);
 
-            let value_nn_c1 =
-                nn.interpolate_gradient(|v| v.data().height, |_| [0.0, 0.0], 1.0, coords);
-            set_pixel(&mut nn_c1_pixmap, x, y, value_nn_c1);
+            let value_nn_c1_1 = nn.interpolate_gradient(|v| v.data().height, &grads, 1.0, coords);
+            set_pixel(&mut nn_c1_pixmap_1, x, y, value_nn_c1_1);
+
+            let value_nn_c1_05 = nn.interpolate_gradient(|v| v.data().height, &grads, 0.5, coords);
+            set_pixel(&mut nn_c1_pixmap_05, x, y, value_nn_c1_05);
 
             let value_barycentric = barycentric.interpolate(|v| v.data().height, coords);
             set_pixel(&mut barycentric_pixmap, x, y, value_barycentric);
@@ -133,7 +138,8 @@ pub fn main() -> Result<()> {
 
     for pixmap in [
         &mut nn_c0_pixmap,
-        &mut nn_c1_pixmap,
+        &mut nn_c1_pixmap_1,
+        &mut nn_c1_pixmap_05,
         &mut barycentric_pixmap,
         &mut nearest_neighbor_pixmap,
     ] {
@@ -170,7 +176,8 @@ pub fn main() -> Result<()> {
     }
 
     save_pixmap(nn_c0_pixmap, "interpolation_nn_c0")?;
-    save_pixmap(nn_c1_pixmap, "interpolation_nn_c1")?;
+    save_pixmap(nn_c1_pixmap_1, "interpolation_nn_c1_flatness_1")?;
+    save_pixmap(nn_c1_pixmap_05, "interpolation_nn_c1_flatness_05")?;
     save_pixmap(barycentric_pixmap, "interpolation_barycentric")?;
     save_pixmap(nearest_neighbor_pixmap, "interpolation_nearest_neighbor")?;
 

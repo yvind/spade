@@ -109,10 +109,11 @@ use super::VertexHandle;
 #[doc = include_str!("../../images/interpolation_nn_c0.img")]
 ///
 /// With a gradient, the sharp peaks are gone - the surface will smoothly approximate a linear function as defined
-/// by the gradient in the vicinity of each vertex. In the image below, a gradient of `(0.0, 0.0)` is used which
-/// leads to a small "disc" around each vertex with values close to the vertex value.
-///
-#[doc = include_str!("../../images/interpolation_nn_c1.img")]
+/// by the gradient in the vicinity of each vertex. The gradients are estimated with the estimate_gradients function.
+/// With flatness = 0.5
+#[doc = include_str!("../../images/interpolation_nn_c1_flatness_05.img")]
+/// With flatness = 1.0
+#[doc = include_str!("../../images/interpolation_nn_c1_flatness_1.img")]
 ///
 #[doc(alias = "Interpolation")]
 pub struct NaturalNeighbor<'a, T>
@@ -324,7 +325,39 @@ where
     ///
     /// Refer to [NaturalNeighbor] for more information and a visual example.
     ///
-    /// # Example
+    /// # Example 1
+    ///
+    /// ```
+    /// use spade::{DelaunayTriangulation, HasPosition, Point2};
+    /// # use spade::Triangulation;
+    ///
+    /// struct PointWithData {
+    ///     position: Point2<f64>,
+    ///     height: f64,
+    ///     grad: [f64; 2],
+    /// }
+    ///
+    /// impl HasPosition for PointWithData {
+    ///     type Scalar = f64;
+    ///     fn position(&self) -> Point2<f64> { self.position }
+    /// }
+    ///
+    /// let mut triangulation: DelaunayTriangulation<PointWithData> = Default::default();
+    /// // Insert some points into the triangulation
+    /// triangulation.insert(PointWithData { position: Point2::new(10.0, 10.0), height: 0.0, grad: [-1., -1.] });
+    /// triangulation.insert(PointWithData { position: Point2::new(10.0, -10.0), height: 0.0, grad: [-1., 1.] });
+    /// triangulation.insert(PointWithData { position: Point2::new(-10.0, 10.0), height: 0.0, grad: [1., -1.] });
+    /// triangulation.insert(PointWithData { position: Point2::new(-10.0, -10.0), height: 0.0, grad: [1., 1.] });
+    ///
+    /// let nn = triangulation.natural_neighbor();
+    ///
+    /// // Interpolate point at coordinates (1.0, 2.0). This example uses a known gradients at each vertex.
+    /// // The gradient is the direction of steepest ascent for the function at that point
+    /// let query_point = Point2::new(1.0, 2.0);
+    /// let value: f64 = nn.interpolate_gradient(|v| v.data().height, |v| v.data().grad, 1.0, query_point).unwrap();
+    /// ```
+    ///
+    /// /// # Example 2
     ///
     /// ```
     /// use spade::{DelaunayTriangulation, HasPosition, Point2};
@@ -349,11 +382,14 @@ where
     ///
     /// let nn = triangulation.natural_neighbor();
     ///
-    /// // Interpolate point at coordinates (1.0, 2.0). This example uses a fixed gradient of (0.0, 0.0) which
-    /// // means that the interpolation will have normal vector parallel to the z-axis at each input point.
-    /// // Realistically, the gradient might be stored as an additional property of `PointWithHeight`.
+    /// // Interpolate point at coordinates (1.0, 2.0).
     /// let query_point = Point2::new(1.0, 2.0);
-    /// let value: f64 = nn.interpolate_gradient(|v| v.data().height, |_| [0.0, 0.0], 1.0, query_point).unwrap();
+    /// // Let's interpolate the value with estimated gradients. The gradient is the direction of steepest ascent for the function at that point
+    /// let value: f64 = nn.interpolate_gradient(|v| v.data().height, |v| nn.estimate_gradient(v, |h| h.data().height), 1.0, query_point).unwrap();
+    ///
+    /// // could also have gone and calculated all grads upfront like this, notice the s in gradients
+    /// let grads = nn.estimate_gradients(|v| v.data().height);
+    /// let value: f64 = nn.interpolate_gradient(|v| v.data().height, &grads, 1.0, query_point).unwrap();
     /// ```
     ///
     /// # References
@@ -398,6 +434,11 @@ where
             let h_i = i(handle);
             let diff = position.sub(pos_i);
             let r_i2 = diff.length2();
+
+            if r_i2 == zero() {
+                return Some(h_i);
+            }
+
             let r_i = r_i2.powf(flatness);
             let c1_weight_i = *weight / r_i;
             let grad_i = g(handle);
@@ -571,6 +612,91 @@ where
 
         for tuple in result {
             tuple.1 = tuple.1 / total_area;
+        }
+    }
+
+    /// Estimates and returns the gradient for a every vertex in this triangulation.
+    ///
+    /// This assumes that the triangulation models some kind of height field.
+    /// The gradient is calculated from the weighted and normalized average of the normals of all triangles
+    /// adjacent to the given vertex (weighted by triangle size).
+    ///
+    /// NOTE: This is not Sibson's gradient estimator
+    pub fn estimate_gradients<I>(
+        &self,
+        i: I,
+    ) -> impl Fn(VertexHandle<V, DE, UE, F>) -> [<V as HasPosition>::Scalar; 2]
+    where
+        I: Fn(VertexHandle<V, DE, UE, F>) -> <V as HasPosition>::Scalar,
+    {
+        let grads = self
+            .triangulation
+            .vertices()
+            .map(|v| self.estimate_gradient(v, &i))
+            .collect::<Vec<_>>();
+
+        move |v: VertexHandle<V, DE, UE, F>| grads[v.index()]
+    }
+
+    /// Estimates and returns the gradient for a single vertex in this triangulation.
+    ///
+    /// This assumes that the triangulation models some kind of height field.
+    /// The gradient is calculated from the weighted and normalized average of the normals of all triangles
+    /// adjacent to the given vertex (weighted by triangle size).
+    ///
+    /// NOTE: This is not Sibson's gradient estimator
+    pub fn estimate_gradient<I>(
+        &self,
+        v: VertexHandle<V, DE, UE, F>,
+        i: I,
+    ) -> [<V as HasPosition>::Scalar; 2]
+    where
+        I: Fn(VertexHandle<V, DE, UE, F>) -> <V as HasPosition>::Scalar,
+    {
+        let v_2d = v.position();
+        let v_pos = [v_2d.x, v_2d.y, i(v)];
+
+        let neighbor_positions = {
+            v.out_edges()
+                .map(|e| {
+                    let pos = e.to().position();
+                    [pos.x, pos.y, i(e.to())]
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut final_normal: [<V as HasPosition>::Scalar; 3] = [zero(); 3];
+        for index in 0..neighbor_positions.len() {
+            let p0 = neighbor_positions[index];
+            let p1 = neighbor_positions[(index + 1) % neighbor_positions.len()];
+
+            let d0 = [p0[0] - v_pos[0], p0[1] - v_pos[1], p0[2] - v_pos[2]];
+            let d1 = [p1[0] - v_pos[0], p1[1] - v_pos[1], p1[2] - v_pos[2]];
+
+            let normal = [
+                d0[1] * d1[2] - d0[2] * d1[1],
+                d0[2] * d1[0] - d0[0] * d1[2],
+                d0[0] * d1[1] - d0[1] * d1[0],
+            ];
+
+            // this should be true for every normal
+            // given that the height field assumption holds
+            if normal[2] > zero() {
+                final_normal = [
+                    final_normal[0] + normal[0],
+                    final_normal[1] + normal[1],
+                    final_normal[2] + normal[2],
+                ];
+            }
+        }
+
+        // Calculate gradient from normal
+        if final_normal[2] != zero() {
+            [
+                -final_normal[0] / final_normal[2],
+                -final_normal[1] / final_normal[2],
+            ]
+        } else {
+            [zero(), zero()]
         }
     }
 }
@@ -968,6 +1094,56 @@ mod test {
             .unwrap();
 
         assert!(!result.is_nan());
+        Ok(())
+    }
+
+    #[test]
+    fn test_gradient_estimation_planar() -> Result<(), InsertionError> {
+        let points = vec![
+            PointWithHeight::new(Point2::new(0., 0.), 0.),
+            PointWithHeight::new(Point2::new(1., 0.), 0.),
+            PointWithHeight::new(Point2::new(1., 1.), 1.),
+            PointWithHeight::new(Point2::new(0., 1.), 1.),
+            PointWithHeight::new(Point2::new(0.5, 0.5), 0.5),
+        ];
+
+        let t = DelaunayTriangulation::<_>::bulk_load_stable(points).unwrap();
+        let nn = t.natural_neighbor();
+
+        let v = nn
+            .triangulation
+            .locate_vertex(Point2::new(0.5, 0.5))
+            .unwrap();
+
+        let grad = nn.estimate_gradient(v, |v| v.data().height);
+
+        assert!(grad == [0., 1.0]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_gradient_estimation_flat() -> Result<(), InsertionError> {
+        let points = vec![
+            PointWithHeight::new(Point2::new(0., 0.), 1.),
+            PointWithHeight::new(Point2::new(1., 0.), 1.),
+            PointWithHeight::new(Point2::new(1., 1.), 1.),
+            PointWithHeight::new(Point2::new(0., 1.), 1.),
+            PointWithHeight::new(Point2::new(0.5, 0.5), 0.),
+        ];
+
+        let t = DelaunayTriangulation::<_>::bulk_load_stable(points).unwrap();
+        let nn = t.natural_neighbor();
+
+        let v = nn
+            .triangulation
+            .locate_vertex(Point2::new(0.5, 0.5))
+            .unwrap();
+
+        let grad = nn.estimate_gradient(v, |v| v.data().height);
+
+        assert!(grad == [0., 0.]);
+
         Ok(())
     }
 }
